@@ -139,7 +139,7 @@ readJournalFromCsv mrulesfile csvfile csvdata =
 parseCsv :: FilePath -> String -> IO (Either ParseError CSV)
 parseCsv path csvdata =
   case path of
-    "-" -> liftM (parseCSV "(stdin)") getContents
+    "-" -> parseCSV "(stdin)" `fmap` getContents
     _   -> return $ parseCSV path csvdata
 
 -- | Return the cleaned up and validated CSV data, or an error.
@@ -323,7 +323,7 @@ addAssignment :: (JournalFieldName, FieldTemplate) -> CsvRules -> CsvRules
 addAssignment a r = r{rassignments=a:rassignments r}
 
 setIndexesAndAssignmentsFromList :: [CsvFieldName] -> CsvRules -> CsvRules
-setIndexesAndAssignmentsFromList fs r = addAssignmentsFromList fs . setCsvFieldIndexesFromList fs $ r
+setIndexesAndAssignmentsFromList fs = addAssignmentsFromList fs . setCsvFieldIndexesFromList fs
 
 setCsvFieldIndexesFromList :: [CsvFieldName] -> CsvRules -> CsvRules
 setCsvFieldIndexesFromList fs r = r{rcsvfieldindexes=zip fs [1..]}
@@ -344,7 +344,7 @@ getDirective directivename = lookup directivename . rdirectives
 
 parseRulesFile :: FilePath -> ExceptT String IO CsvRules
 parseRulesFile f = do
-  s <- liftIO $ (readFile' f >>= expandIncludes (takeDirectory f))
+  s <- liftIO $ readFile' f >>= expandIncludes (takeDirectory f)
   let rules = parseCsvRules f s
   case rules of
     Left e -> ExceptT $ return $ Left $ show e
@@ -372,8 +372,7 @@ expandIncludes basedir content = do
 
 parseCsvRules :: FilePath -> String -> Either ParseError CsvRules
 -- parseCsvRules rulesfile s = runParser csvrulesfile nullrules{baseAccount=takeBaseName rulesfile} rulesfile s
-parseCsvRules rulesfile s =
-  runParser rulesp rules rulesfile s
+parseCsvRules = runParser rulesp rules
 
 -- | Return the validated rules, or an error.
 validateRules :: CsvRules -> ExceptT String IO CsvRules
@@ -391,7 +390,7 @@ validateRules rules = do
 
 -- parsers
 
-rulesp :: Stream [Char] m t => ParsecT [Char] CsvRules m CsvRules
+rulesp :: Stream String m t => ParsecT String CsvRules m CsvRules
 rulesp = do
   many $ choice'
     [blankorcommentlinep                                                    <?> "blank or comment line"
@@ -407,19 +406,19 @@ rulesp = do
           ,rconditionalblocks=reverse $ rconditionalblocks r
           }
 
-blankorcommentlinep :: Stream [Char] m t => ParsecT [Char] CsvRules m ()
+blankorcommentlinep :: Stream String m t => ParsecT String CsvRules m ()
 blankorcommentlinep = pdbg 3 "trying blankorcommentlinep" >> choice' [blanklinep, commentlinep]
 
-blanklinep :: Stream [Char] m t => ParsecT [Char] CsvRules m ()
+blanklinep :: Stream String m t => ParsecT String CsvRules m ()
 blanklinep = many spacenonewline >> newline >> return () <?> "blank line"
 
-commentlinep :: Stream [Char] m t => ParsecT [Char] CsvRules m ()
+commentlinep :: Stream String m t => ParsecT String CsvRules m ()
 commentlinep = many spacenonewline >> commentcharp >> restofline >> return () <?> "comment line"
 
-commentcharp :: Stream [Char] m t => ParsecT [Char] CsvRules m Char
+commentcharp :: Stream String m t => ParsecT String CsvRules m Char
 commentcharp = oneOf ";#*"
 
-directivep :: Stream [Char] m t => ParsecT [Char] CsvRules m (DirectiveName, String)
+directivep :: Stream String m t => ParsecT String CsvRules m (DirectiveName, String)
 directivep = (do
   pdbg 3 "trying directive"
   d <- choice' $ map string directives
@@ -438,10 +437,10 @@ directives =
    -- ,"base-currency"
   ]
 
-directivevalp :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+directivevalp :: Stream String m t => ParsecT String CsvRules m String
 directivevalp = anyChar `manyTill` eolof
 
-fieldnamelistp :: Stream [Char] m t => ParsecT [Char] CsvRules m [CsvFieldName]
+fieldnamelistp :: Stream String m t => ParsecT String CsvRules m [CsvFieldName]
 fieldnamelistp = (do
   pdbg 3 "trying fieldnamelist"
   string "fields"
@@ -449,25 +448,25 @@ fieldnamelistp = (do
   many1 spacenonewline
   let separator = many spacenonewline >> char ',' >> many spacenonewline
   f <- fromMaybe "" <$> optionMaybe fieldnamep
-  fs <- many1 $ (separator >> fromMaybe "" <$> optionMaybe fieldnamep)
+  fs <- many1 $ separator >> fromMaybe "" <$> optionMaybe fieldnamep
   restofline
   return $ map (map toLower) $ f:fs
   ) <?> "field name list"
 
-fieldnamep :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+fieldnamep :: Stream String m t => ParsecT String CsvRules m String
 fieldnamep = quotedfieldnamep <|> barefieldnamep
 
-quotedfieldnamep :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+quotedfieldnamep :: Stream String m t => ParsecT String CsvRules m String
 quotedfieldnamep = do
   char '"'
   f <- many1 $ noneOf "\"\n:;#~"
   char '"'
   return f
 
-barefieldnamep :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+barefieldnamep :: Stream String m t => ParsecT String CsvRules m String
 barefieldnamep = many1 $ noneOf " \t\n,;#~"
 
-fieldassignmentp :: Stream [Char] m t => ParsecT [Char] CsvRules m (JournalFieldName, FieldTemplate)
+fieldassignmentp :: Stream String m t => ParsecT String CsvRules m (JournalFieldName, FieldTemplate)
 fieldassignmentp = do
   pdbg 3 "trying fieldassignment"
   f <- journalfieldnamep
@@ -476,7 +475,7 @@ fieldassignmentp = do
   return (f,v)
   <?> "field assignment"
 
-journalfieldnamep :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+journalfieldnamep :: Stream String m t => ParsecT String CsvRules m String
 journalfieldnamep = pdbg 2 "trying journalfieldnamep" >> choice' (map string journalfieldnames)
 
 journalfieldnames =
@@ -496,7 +495,7 @@ journalfieldnames =
   ,"comment"
   ]
 
-assignmentseparatorp :: Stream [Char] m t => ParsecT [Char] CsvRules m ()
+assignmentseparatorp :: Stream String m t => ParsecT String CsvRules m ()
 assignmentseparatorp = do
   pdbg 3 "trying assignmentseparatorp"
   choice [
@@ -507,12 +506,12 @@ assignmentseparatorp = do
   _ <- many spacenonewline
   return ()
 
-fieldvalp :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+fieldvalp :: Stream String m t => ParsecT String CsvRules m String
 fieldvalp = do
   pdbg 2 "trying fieldval"
   anyChar `manyTill` eolof
 
-conditionalblockp :: Stream [Char] m t => ParsecT [Char] CsvRules m ConditionalBlock
+conditionalblockp :: Stream String m t => ParsecT String CsvRules m ConditionalBlock
 conditionalblockp = do
   pdbg 3 "trying conditionalblockp"
   string "if" >> many spacenonewline >> optional newline
@@ -523,7 +522,7 @@ conditionalblockp = do
   return (ms, as)
   <?> "conditional block"
 
-recordmatcherp :: Stream [Char] m t => ParsecT [Char] CsvRules m [[Char]]
+recordmatcherp :: Stream String m t => ParsecT String CsvRules m [String]
 recordmatcherp = do
   pdbg 2 "trying recordmatcherp"
   -- pos <- currentPos
@@ -534,7 +533,7 @@ recordmatcherp = do
   return ps
   <?> "record matcher"
 
-matchoperatorp :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+matchoperatorp :: Stream String m t => ParsecT String CsvRules m String
 matchoperatorp = choice' $ map string
   ["~"
   -- ,"!~"
@@ -542,13 +541,12 @@ matchoperatorp = choice' $ map string
   -- ,"!="
   ]
 
-patternsp :: Stream [Char] m t => ParsecT [Char] CsvRules m [[Char]]
+patternsp :: Stream String m t => ParsecT String CsvRules m [String]
 patternsp = do
   pdbg 3 "trying patternsp"
-  ps <- many regexp
-  return ps
+  many regexp
 
-regexp :: Stream [Char] m t => ParsecT [Char] CsvRules m [Char]
+regexp :: Stream String m t => ParsecT String CsvRules m String
 regexp = do
   pdbg 3 "trying regexp"
   notFollowedBy matchoperatorp
@@ -591,12 +589,12 @@ transactionFromCsvRecord sourcepos rules record = t
     mdateformat = mdirective "date-format"
     date        = render $ fromMaybe "" $ mfieldtemplate "date"
     date'       = fromMaybe (error' $ dateerror "date" date mdateformat) $ mparsedate date
-    mdate2      = maybe Nothing (Just . render) $ mfieldtemplate "date2"
+    mdate2      = render `fmap` mfieldtemplate "date2"
     mdate2'     = maybe Nothing (maybe (error' $ dateerror "date2" (fromMaybe "" mdate2) mdateformat) Just . mparsedate) mdate2
     dateerror datefield value mdateformat = unlines
       ["error: could not parse \""++value++"\" as a date using date format "++maybe "\"YYYY/M/D\", \"YYYY-M-D\" or \"YYYY.M.D\"" show mdateformat
       ,"the CSV record is:  "++intercalate ", " (map show record)
-      ,"the "++datefield++" rule is:   "++(fromMaybe "required, but missing" $ mfieldtemplate datefield)
+      ,"the "++datefield++" rule is:   "++fromMaybe "required, but missing" (mfieldtemplate datefield)
       ,"the date-format is: "++fromMaybe "unspecified" mdateformat
       ,"you may need to "
        ++"change your "++datefield++" rule, "
@@ -623,8 +621,8 @@ transactionFromCsvRecord sourcepos rules record = t
     amounterror err = error' $ unlines
       ["error: could not parse \""++amountstr++"\" as an amount"
       ,showRecord record
-      ,"the amount rule is:      "++(fromMaybe "" $ mfieldtemplate "amount")
-      ,"the currency rule is:    "++(fromMaybe "unspecified" $ mfieldtemplate "currency")
+      ,"the amount rule is:      "++fromMaybe "" (mfieldtemplate "amount")
+      ,"the currency rule is:    "++fromMaybe "unspecified" (mfieldtemplate "currency")
       ,"the default-currency is: "++fromMaybe "unspecified" mdefaultcurrency
       ,"the parse error is:      "++show err
       ,"you may need to "
@@ -634,7 +632,7 @@ transactionFromCsvRecord sourcepos rules record = t
     -- Using costOfMixedAmount here to allow complex costs like "10 GBP @@ 15 USD".
     -- Aim is to have "10 GBP @@ 15 USD" applied to account2, but have "-15USD" applied to account1
     amount1        = costOfMixedAmount amount
-    amount2        = (-amount)
+    amount2        = -amount
     s `or` def  = if null s then def else s
     defaccount1 = fromMaybe "unknown" $ mdirective "default-account1"
     defaccount2 = case isNegativeMixedAmount amount2 of
@@ -715,7 +713,7 @@ getEffectiveAssignment rules record f = lastMay $ assignmentsFor f
                         csvline = intercalate "," record
 
 renderTemplate ::  CsvRules -> CsvRecord -> FieldTemplate -> String
-renderTemplate rules record t = regexReplaceBy "%[A-z0-9]+" replace t
+renderTemplate rules record = regexReplaceBy "%[A-z0-9]+" replace
   where
     replace ('%':pat) = maybe pat (\i -> atDef "" record (i-1)) mi
       where
@@ -751,7 +749,7 @@ parseDateWithFormatOrDefaultFormats mformat s = firstJust $ map parsewith format
 --------------------------------------------------------------------------------
 -- tests
 
-tests_Hledger_Read_CsvReader = TestList (test_parser)
+tests_Hledger_Read_CsvReader = TestList test_parser
                                -- ++ test_description_parsing)
 
 -- test_description_parsing = [
@@ -776,7 +774,7 @@ tests_Hledger_Read_CsvReader = TestList (test_parser)
 
 test_parser =  [
 
-   "convert rules parsing: empty file" ~: do
+   "convert rules parsing: empty file" ~:
      -- let assertMixedAmountParse parseresult mixedamount =
      --         (either (const "parse error") showMixedAmountDebug parseresult) ~?= (showMixedAmountDebug mixedamount)
     assertParseEqual (parseCsvRules "unknown" "") rules
@@ -785,10 +783,10 @@ test_parser =  [
   --    assertParseEqual (parseWithState rules accountrule "A\na\n") -- leading blank line required
   --                ([("A",Nothing)], "a")
 
-  ,"convert rules parsing: trailing comments" ~: do
+  ,"convert rules parsing: trailing comments" ~:
      assertParse (parseWithState rules rulesp "skip\n# \n#\n")
 
-  ,"convert rules parsing: trailing blank lines" ~: do
+  ,"convert rules parsing: trailing blank lines" ~:
      assertParse (parseWithState rules rulesp "skip\n\n  \n")
 
   -- not supported
