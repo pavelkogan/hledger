@@ -68,12 +68,6 @@ import Prelude.Compat
 import Control.Monad
 import Data.List.Compat
 import Data.Maybe
-#if MIN_VERSION_time(1,5,0)
-import Data.Time.Format hiding (months)
-#else
-import Data.Time.Format
-import System.Locale (TimeLocale, defaultTimeLocale)
-#endif
 import Data.Time.Calendar
 import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar.WeekDate
@@ -83,6 +77,7 @@ import Safe (headMay, lastMay, readMay)
 import Text.Parsec
 import Text.Printf
 
+import Hledger.Compat.Time
 import Hledger.Data.Types
 import Hledger.Utils
 
@@ -524,20 +519,11 @@ nthdayofweekcontaining n d | d1 >= d    = d1
 --     parseTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" s
 --     ]
 
-parsetime :: ParseTime t => TimeLocale -> String -> String -> Maybe t
-parsetime =
-#if MIN_VERSION_time(1,5,0)
-     parseTimeM True
-#else
-     parseTime
-#endif
-
-
 -- | Parse a couple of date string formats to a time type.
 parsedateM :: String -> Maybe Day
 parsedateM s = firstJust [
-     parsetime defaultTimeLocale "%Y/%m/%d" s,
-     parsetime defaultTimeLocale "%Y-%m-%d" s
+     parseTime defaultTimeLocale "%Y/%m/%d" s,
+     parseTime defaultTimeLocale "%Y-%m-%d" s
      ]
 
 
@@ -573,7 +559,7 @@ parsedate s =  fromMaybe (error' $ "could not parse date \"" ++ s ++ "\"")
 -- | Parse a time string to a time type using the provided pattern, or
 -- return the default.
 _parsetimewith :: ParseTime t => String -> String -> t -> t
-_parsetimewith pat s def = fromMaybe def $ parsetime defaultTimeLocale pat s
+_parsetimewith pat s def = fromMaybe def $ parseTime defaultTimeLocale pat s
 
 {-|
 Parse a date in any of the formats allowed in ledger's period expressions,

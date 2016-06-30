@@ -15,14 +15,11 @@ import Data.Maybe
 import qualified Data.Text as T
 import Data.Time.Calendar
 import Data.Time.Clock
-import Data.Time.Format
 import Data.Time.LocalTime
-#if !(MIN_VERSION_time(1,5,0))
-import System.Locale (defaultTimeLocale)
-#endif
 import Test.HUnit
 import Text.Printf
 
+import Hledger.Compat.Time
 import Hledger.Utils
 import Hledger.Data.Types
 import Hledger.Data.Dates
@@ -119,11 +116,7 @@ tests_Hledger_Data_Timeclock = TestList [
          yesterday = prevday today
          clockin = TimeclockEntry nullsourcepos In
          mktime d = LocalTime d . fromMaybe midnight .
-#if MIN_VERSION_time(1,5,0)
-                    parseTimeM True defaultTimeLocale "%H:%M:%S"
-#else
                     parseTime defaultTimeLocale "%H:%M:%S"
-#endif
          showtime = formatTime defaultTimeLocale "%H:%M"
          assertEntriesGiveStrings name es ss = assertEqual name ss (map (T.unpack . tdescription) $ timeclockEntriesToTransactions now es)
 

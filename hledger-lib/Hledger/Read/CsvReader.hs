@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-|
 
 A reader for CSV data, using an extra rules file to help interpret the data.
@@ -33,12 +32,6 @@ import Data.Ord
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Calendar (Day)
-#if MIN_VERSION_time(1,5,0)
-import Data.Time.Format (parseTimeM, defaultTimeLocale)
-#else
-import Data.Time.Format (parseTime)
-import System.Locale (defaultTimeLocale)
-#endif
 import Safe
 import System.Directory (doesFileExist)
 import System.FilePath
@@ -50,6 +43,7 @@ import Text.Parsec.Pos
 import Text.Parsec.Error
 import Text.Printf (hPrintf,printf)
 
+import Hledger.Compat.Time
 import Hledger.Data
 import Hledger.Utils.UTF8IOCompat (getContents)
 import Hledger.Utils
@@ -726,13 +720,7 @@ renderTemplate rules record = regexReplaceBy "%[A-z0-9]+" replace
 parseDateWithFormatOrDefaultFormats :: Maybe DateFormat -> String -> Maybe Day
 parseDateWithFormatOrDefaultFormats mformat s = firstJust $ map parsewith formats
   where
-    parsetime =
-#if MIN_VERSION_time(1,5,0)
-     parseTimeM True
-#else
-     parseTime
-#endif
-    parsewith = flip (parsetime defaultTimeLocale) s
+    parsewith = flip (parseTime defaultTimeLocale) s
     formats = maybe
                ["%Y/%-m/%-d"
                ,"%Y-%-m-%-d"
